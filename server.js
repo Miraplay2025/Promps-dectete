@@ -3,7 +3,7 @@ const http = require("http");
 const WebSocket = require("ws");
 const path = require("path");
 const cors = require("cors");
-const franc = require("franc-min");
+const langdetect = require("langdetect");
 
 const app = express();
 const server = http.createServer(app);
@@ -16,18 +16,18 @@ function log(msg) {
   console.log(`[SERVER LOG] ${new Date().toISOString()} - ${msg}`);
 }
 
-// Detecta inglês (ISO 639-3 = "eng")
+// Detecta inglês com score
 function isEnglish(text) {
-  if (!text || text.length < 20) return false;
-  const lang = franc(text);
-  return lang === "eng";
+  if (!text || text.length < 30) return false;
+  const results = langdetect.detect(text, 1);
+  return results.length && results[0].lang === "en";
 }
 
 wss.on("connection", ws => {
-  log("Cliente conectado via WebSocket");
+  log("Cliente conectado");
 
   ws.on("message", async message => {
-    log("Texto recebido, iniciando processamento");
+    log("Texto recebido, iniciando análise");
 
     const text = message.toString();
     const lines = text.split(/\n+/);
@@ -52,11 +52,10 @@ wss.on("connection", ws => {
 
       ws.send(JSON.stringify({
         progress: Math.round((i / lines.length) * 100),
-        found: prompts.length,
-        line: line.slice(0, 60)
+        found: prompts.length
       }));
 
-      await new Promise(r => setTimeout(r, 5));
+      await new Promise(r => setTimeout(r, 4));
     }
 
     if (buffer.trim() && isEnglish(buffer)) {
@@ -70,12 +69,12 @@ wss.on("connection", ws => {
       total: prompts.length
     }));
 
-    log(`Processamento concluído. Total: ${prompts.length}`);
+    log(`Processamento finalizado. Total: ${prompts.length}`);
   });
 
   ws.on("close", () => log("Cliente desconectado"));
 });
 
 server.listen(3000, () => {
-  log("Servidor iniciado na porta 3000");
+  log("Servidor ativo na porta 3000");
 });
