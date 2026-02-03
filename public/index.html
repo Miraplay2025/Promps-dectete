@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prompt IA</title>
+
+<style>
+body {
+  margin: 0;
+  background: #020617;
+  font-family: system-ui, sans-serif;
+  color: #e5e7eb;
+  display: flex;
+  justify-content: center;
+}
+
+.app {
+  width: 100%;
+  max-width: 480px;
+  padding: 16px;
+}
+
+textarea {
+  width: 100%;
+  height: 220px;
+  background: #020617;
+  color: #e5e7eb;
+  border: 1px solid #334155;
+  border-radius: 14px;
+  padding: 14px;
+}
+
+button {
+  width: 100%;
+  margin-top: 12px;
+  padding: 14px;
+  border-radius: 14px;
+  border: none;
+  background: #2563eb;
+  color: white;
+  font-weight: 600;
+}
+
+.progress-box {
+  margin-top: 12px;
+}
+
+.progress-bar {
+  height: 10px;
+  width: 100%;
+  background: #0f172a;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  width: 0%;
+  background: #22c55e;
+  transition: width 0.2s linear;
+}
+
+.status {
+  margin-top: 6px;
+  font-size: 13px;
+  text-align: center;
+}
+
+.output {
+  margin-top: 12px;
+  height: 50vh;
+  background: #020617;
+  border: 1px solid #334155;
+  border-radius: 14px;
+  padding: 14px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+}
+
+.copy {
+  margin-top: 10px;
+  background: #0f172a;
+  border: 1px solid #334155;
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <textarea id="input" placeholder="Cole o texto com Prompts..."></textarea>
+  <button onclick="processar()">Processar com IA</button>
+
+  <div class="progress-box">
+    <div class="progress-bar">
+      <div class="progress-fill" id="bar"></div>
+    </div>
+    <div class="status" id="status"></div>
+  </div>
+
+  <div class="output" id="output"></div>
+  <button class="copy" id="copyBtn" style="display:none;" onclick="copiar()">Copiar tudo</button>
+</div>
+
+<script>
+let socket;
+const bar = document.getElementById("bar");
+const statusEl = document.getElementById("status");
+const output = document.getElementById("output");
+const copyBtn = document.getElementById("copyBtn");
+
+function processar() {
+  const text = input.value.trim();
+  if (!text) return;
+
+  output.textContent = "";
+  copyBtn.style.display = "none";
+  bar.style.width = "0%";
+  statusEl.textContent = "Iniciando...";
+
+  socket = new WebSocket(`ws://${location.host}`);
+
+  socket.onopen = () => {
+    socket.send(JSON.stringify({ text }));
+  };
+
+  socket.onmessage = e => {
+    const data = JSON.parse(e.data);
+
+    if (data.type === "init") {
+      statusEl.textContent = `Total de blocos: ${data.total}`;
+    }
+
+    if (data.type === "progress") {
+      bar.style.width = data.percent + "%";
+      statusEl.textContent =
+        `Processados: ${data.processed} | Prompts válidos: ${data.valid} | ${data.percent}%`;
+    }
+
+    if (data.type === "done") {
+      bar.style.width = "100%";
+      statusEl.textContent = `Concluído • Total final: ${data.total}`;
+      output.textContent = data.prompts.join(" ");
+      copyBtn.style.display = "block";
+      socket.close();
+    }
+
+    if (data.type === "error") {
+      statusEl.textContent = data.message;
+    }
+  };
+}
+
+function copiar() {
+  navigator.clipboard.writeText(output.textContent);
+  statusEl.textContent = "Copiado.";
+}
+</script>
+
+</body>
+</html>
