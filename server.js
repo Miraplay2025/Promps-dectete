@@ -5,7 +5,7 @@ const path = require("path");
 const fs = require("fs");
 const https = require("https");
 const cors = require("cors");
-const { Classifier } = require("fasttext.js"); // FastText moderno
+const FastText = require("fasttext.js"); // Corrigido
 
 const app = express();
 const server = http.createServer(app);
@@ -17,7 +17,7 @@ app.use(express.static(path.join(__dirname, "public")));
 const MODEL_FILE = path.join(__dirname, "lid.176.bin");
 const MODEL_URL = "https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.bin";
 
-const ft = new Classifier();
+const ft = new FastText(); // instância correta
 let modelReady = false;
 
 // Baixa modelo automaticamente
@@ -86,7 +86,7 @@ wss.on("connection", ws => {
         found: prompts.length
       }));
 
-      await new Promise(r => setTimeout(r, 10));
+      await new Promise(r => setTimeout(r, 10)); // mantém UI responsiva
     }
 
     if (buffer.trim() && isEnglish(buffer)) {
