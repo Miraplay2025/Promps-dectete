@@ -6,91 +6,67 @@
 <title>Prompt Detector</title>
 
 <style>
-body { font-family: system-ui, sans-serif; background: #0f172a; color: #fff; margin: 0; padding: 16px; }
-.container { max-width: 900px; margin: auto; }
-textarea { width: 100%; min-height: 200px; border-radius: 10px; padding: 12px; border: none; font-size: 14px; }
-button { margin-top: 12px; padding: 12px; width: 100%; border: none; border-radius: 10px; background: #22c55e; font-size: 16px; cursor: pointer; }
-.progress { margin-top: 16px; background: #334155; border-radius: 10px; overflow: hidden; }
-.bar { height: 12px; width: 0%; background: #22c55e; }
-.output { margin-top: 16px; height: 50vh; background: #020617; border-radius: 10px; padding: 12px; overflow-y: auto; white-space: pre-wrap; }
-.stats { margin-top: 8px; font-size: 14px; }
-.log { margin-top: 8px; font-size: 12px; color: #a5b4fc; height: 150px; overflow-y: auto; background: #1e293b; padding: 6px; border-radius: 8px; }
+body { background:#0f172a;color:#fff;font-family:system-ui;padding:16px }
+.container { max-width:900px;margin:auto }
+textarea { width:100%;min-height:200px;border-radius:10px;padding:12px;border:none }
+button { margin-top:12px;width:100%;padding:12px;border-radius:10px;border:none;background:#22c55e;font-size:16px }
+.progress { margin-top:16px;background:#334155;border-radius:10px }
+.bar { height:12px;width:0%;background:#22c55e }
+.log { margin-top:12px;background:#1e293b;padding:8px;height:140px;overflow:auto;font-size:12px }
+.output { margin-top:12px;background:#020617;height:40vh;padding:12px;border-radius:10px;overflow:auto }
 </style>
 </head>
 
 <body>
 <div class="container">
-  <h2>Detector de Prompts</h2>
-  <textarea id="input" placeholder="Cole o texto aqui..."></textarea>
-  <button onclick="start()">Processar</button>
+<h2>Detector de Prompts</h2>
 
-  <div class="progress"><div class="bar" id="bar"></div></div>
-  <div class="stats" id="stats">Prompts detectados: 0</div>
-  <div class="log" id="log">Logs do processo...</div>
-  <div class="output" id="output"></div>
-  <button onclick="copy()">Copiar Prompts</button>
+<textarea id="input"></textarea>
+<button onclick="start()">Processar</button>
+
+<div class="progress"><div id="bar" class="bar"></div></div>
+<div id="log" class="log"></div>
+<div id="output" class="output"></div>
 </div>
 
 <script>
 let ws;
-let output = document.getElementById("output");
-let bar = document.getElementById("bar");
-let stats = document.getElementById("stats");
-let logEl = document.getElementById("log");
+const logEl = document.getElementById("log");
+const bar = document.getElementById("bar");
+const out = document.getElementById("output");
 
-function log(message) {
-  const ts = new Date().toLocaleTimeString();
-  logEl.textContent += `[${ts}] ${message}\n`;
+function log(msg) {
+  logEl.textContent += `[${new Date().toLocaleTimeString()}] ${msg}\n`;
   logEl.scrollTop = logEl.scrollHeight;
 }
 
 function start() {
-  output.textContent = "";
-  bar.style.width = "0%";
-  stats.textContent = "Prompts detectados: 0";
   logEl.textContent = "";
-  log("Conectando ao WebSocket...");
+  out.textContent = "";
+  bar.style.width = "0%";
 
   ws = new WebSocket(`ws://${location.host}`);
+  log("Conectando ao servidor...");
 
   ws.onopen = () => {
-    log("WebSocket aberto. Enviando texto para análise...");
+    log("Conectado. Enviando texto.");
     ws.send(document.getElementById("input").value);
   };
 
   ws.onmessage = e => {
-    const data = JSON.parse(e.data);
+    const d = JSON.parse(e.data);
 
-    if (data.progress !== undefined) {
-      bar.style.width = data.progress + "%";
-      if(data.currentLine) log(`Processando linha: "${data.currentLine}"`);
+    if (d.progress !== undefined) {
+      bar.style.width = d.progress + "%";
+      log("Processando linha...");
     }
 
-    if (data.found !== undefined) {
-      stats.textContent = "Prompts detectados: " + data.found;
-    }
-
-    if (data.done) {
-      output.textContent = data.prompts.join("\n\n");
-      stats.textContent = "Total final: " + data.total;
-      bar.style.width = "100%";
-      log("Processamento concluído!");
+    if (d.done) {
+      out.textContent = d.prompts.join("\n\n");
+      log("Finalizado.");
       ws.close();
     }
-
-    if (data.error) {
-      alert(data.error);
-      log("Erro: " + data.error);
-    }
   };
-
-  ws.onclose = () => log("WebSocket fechado.");
-  ws.onerror = err => log("Erro no WebSocket: " + err);
-}
-
-function copy() {
-  navigator.clipboard.writeText(output.textContent);
-  alert("Prompts copiados com sucesso!");
 }
 </script>
 </body>
