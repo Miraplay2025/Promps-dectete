@@ -3,159 +3,95 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Prompt IA</title>
+<title>Prompt Detector</title>
 
 <style>
-body {
-  margin: 0;
-  background: #020617;
-  font-family: system-ui, sans-serif;
-  color: #e5e7eb;
-  display: flex;
-  justify-content: center;
-}
-
-.app {
-  width: 100%;
-  max-width: 480px;
-  padding: 16px;
-}
-
-textarea {
-  width: 100%;
-  height: 220px;
-  background: #020617;
-  color: #e5e7eb;
-  border: 1px solid #334155;
-  border-radius: 14px;
-  padding: 14px;
-}
-
-button {
-  width: 100%;
-  margin-top: 12px;
-  padding: 14px;
-  border-radius: 14px;
-  border: none;
-  background: #2563eb;
-  color: white;
-  font-weight: 600;
-}
-
-.progress-box {
-  margin-top: 12px;
-}
-
-.progress-bar {
-  height: 10px;
-  width: 100%;
-  background: #0f172a;
-  border-radius: 999px;
-  overflow: hidden;
-}
-
-.progress-fill {
-  height: 100%;
-  width: 0%;
-  background: #22c55e;
-  transition: width 0.2s linear;
-}
-
-.status {
-  margin-top: 6px;
-  font-size: 13px;
-  text-align: center;
-}
-
-.output {
-  margin-top: 12px;
-  height: 50vh;
-  background: #020617;
-  border: 1px solid #334155;
-  border-radius: 14px;
-  padding: 14px;
-  overflow-y: auto;
-  white-space: pre-wrap;
-}
-
-.copy {
-  margin-top: 10px;
-  background: #0f172a;
-  border: 1px solid #334155;
-}
+body { font-family: system-ui, sans-serif; background: #0f172a; color: #fff; margin: 0; padding: 16px; }
+.container { max-width: 900px; margin: auto; }
+textarea { width: 100%; min-height: 200px; border-radius: 10px; padding: 12px; border: none; font-size: 14px; }
+button { margin-top: 12px; padding: 12px; width: 100%; border: none; border-radius: 10px; background: #22c55e; font-size: 16px; cursor: pointer; }
+.progress { margin-top: 16px; background: #334155; border-radius: 10px; overflow: hidden; }
+.bar { height: 12px; width: 0%; background: #22c55e; }
+.output { margin-top: 16px; height: 50vh; background: #020617; border-radius: 10px; padding: 12px; overflow-y: auto; white-space: pre-wrap; }
+.stats { margin-top: 8px; font-size: 14px; }
+.log { margin-top: 8px; font-size: 12px; color: #a5b4fc; height: 150px; overflow-y: auto; background: #1e293b; padding: 6px; border-radius: 8px; }
 </style>
 </head>
+
 <body>
+<div class="container">
+  <h2>Detector de Prompts</h2>
+  <textarea id="input" placeholder="Cole o texto aqui..."></textarea>
+  <button onclick="start()">Processar</button>
 
-<div class="app">
-  <textarea id="input" placeholder="Cole o texto com Prompts..."></textarea>
-  <button onclick="processar()">Processar com IA</button>
-
-  <div class="progress-box">
-    <div class="progress-bar">
-      <div class="progress-fill" id="bar"></div>
-    </div>
-    <div class="status" id="status"></div>
-  </div>
-
+  <div class="progress"><div class="bar" id="bar"></div></div>
+  <div class="stats" id="stats">Prompts detectados: 0</div>
+  <div class="log" id="log">Logs do processo...</div>
   <div class="output" id="output"></div>
-  <button class="copy" id="copyBtn" style="display:none;" onclick="copiar()">Copiar tudo</button>
+  <button onclick="copy()">Copiar Prompts</button>
 </div>
 
 <script>
-let socket;
-const bar = document.getElementById("bar");
-const statusEl = document.getElementById("status");
-const output = document.getElementById("output");
-const copyBtn = document.getElementById("copyBtn");
+let ws;
+let output = document.getElementById("output");
+let bar = document.getElementById("bar");
+let stats = document.getElementById("stats");
+let logEl = document.getElementById("log");
 
-function processar() {
-  const text = input.value.trim();
-  if (!text) return;
+function log(message) {
+  const ts = new Date().toLocaleTimeString();
+  logEl.textContent += `[${ts}] ${message}\n`;
+  logEl.scrollTop = logEl.scrollHeight;
+}
 
+function start() {
   output.textContent = "";
-  copyBtn.style.display = "none";
   bar.style.width = "0%";
-  statusEl.textContent = "Iniciando...";
+  stats.textContent = "Prompts detectados: 0";
+  logEl.textContent = "";
+  log("Conectando ao WebSocket...");
 
-  socket = new WebSocket(`ws://${location.host}`);
+  ws = new WebSocket(`ws://${location.host}`);
 
-  socket.onopen = () => {
-    socket.send(JSON.stringify({ text }));
+  ws.onopen = () => {
+    log("WebSocket aberto. Enviando texto para análise...");
+    ws.send(document.getElementById("input").value);
   };
 
-  socket.onmessage = e => {
+  ws.onmessage = e => {
     const data = JSON.parse(e.data);
 
-    if (data.type === "init") {
-      statusEl.textContent = `Total de blocos: ${data.total}`;
+    if (data.progress !== undefined) {
+      bar.style.width = data.progress + "%";
+      if(data.currentLine) log(`Processando linha: "${data.currentLine}"`);
     }
 
-    if (data.type === "progress") {
-      bar.style.width = data.percent + "%";
-      statusEl.textContent =
-        `Processados: ${data.processed} | Prompts válidos: ${data.valid} | ${data.percent}%`;
+    if (data.found !== undefined) {
+      stats.textContent = "Prompts detectados: " + data.found;
     }
 
-    if (data.type === "done") {
+    if (data.done) {
+      output.textContent = data.prompts.join("\n\n");
+      stats.textContent = "Total final: " + data.total;
       bar.style.width = "100%";
-      statusEl.textContent = `Concluído • Total final: ${data.total}`;
-      output.textContent = data.prompts.join(" ");
-      copyBtn.style.display = "block";
-      socket.close();
+      log("Processamento concluído!");
+      ws.close();
     }
 
-    if (data.type === "error") {
-      statusEl.textContent = data.message;
+    if (data.error) {
+      alert(data.error);
+      log("Erro: " + data.error);
     }
   };
+
+  ws.onclose = () => log("WebSocket fechado.");
+  ws.onerror = err => log("Erro no WebSocket: " + err);
 }
 
-function copiar() {
+function copy() {
   navigator.clipboard.writeText(output.textContent);
-  statusEl.textContent = "Copiado.";
+  alert("Prompts copiados com sucesso!");
 }
 </script>
-
 </body>
 </html>
