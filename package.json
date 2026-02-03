@@ -9,6 +9,6 @@
     "express": "*",
     "ws": "*",
     "fasttext.js": "*",
-    "node-fetch": "*"
+    "node-fetch": "2" 
   }
 }
