@@ -2,46 +2,20 @@ const express = require("express");
 const http = require("http");
 const WebSocket = require("ws");
 const path = require("path");
-const fs = require("fs");
-const https = require("https");
-const cors = require("cors");
-const FastText = require("fasttext.js"); // Corrigido
+const { Classifier } = require("fasttext.js"); // Corrigido
 
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-app.use(cors()); // Permite chamadas externas
 app.use(express.static(path.join(__dirname, "public")));
 
-const MODEL_FILE = path.join(__dirname, "lid.176.bin");
-const MODEL_URL = "https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.bin";
-
-const ft = new FastText(); // instância correta
+const ft = new Classifier(); // instância correta
 let modelReady = false;
 
-// Baixa modelo automaticamente
-async function downloadModel(url, dest) {
-  if (fs.existsSync(dest)) return;
-  console.log("Baixando modelo FastText, isso pode levar alguns minutos...");
-  return new Promise((resolve, reject) => {
-    const file = fs.createWriteStream(dest);
-    https.get(url, response => {
-      if (response.statusCode !== 200) return reject(new Error("Falha ao baixar modelo: " + response.statusCode));
-      response.pipe(file);
-      file.on("finish", () => file.close(resolve));
-    }).on("error", err => {
-      fs.unlinkSync(dest);
-      reject(err);
-    });
-  });
-}
-
-// Carrega modelo de forma assíncrona
 (async () => {
   try {
-    await downloadModel(MODEL_URL, MODEL_FILE);
-    await ft.loadModel(MODEL_FILE);
+    await ft.loadModel("lid.176.bin");
     modelReady = true;
     console.log("FastText model loaded");
   } catch (err) {
@@ -49,17 +23,15 @@ async function downloadModel(url, dest) {
   }
 })();
 
-// Função para verificar se o texto é inglês
 function isEnglish(text) {
   const result = ft.predict(text.replace(/\n/g, " "), 1);
   return result[0].label === "__label__en";
 }
 
-// WebSocket
 wss.on("connection", ws => {
   ws.on("message", async message => {
     if (!modelReady) {
-      ws.send(JSON.stringify({ error: "Modelo ainda não pronto, tente novamente em alguns segundos." }));
+      ws.send(JSON.stringify({ error: "Model not ready yet" }));
       return;
     }
 
@@ -86,7 +58,7 @@ wss.on("connection", ws => {
         found: prompts.length
       }));
 
-      await new Promise(r => setTimeout(r, 10)); // mantém UI responsiva
+      await new Promise(r => setTimeout(r, 10));
     }
 
     if (buffer.trim() && isEnglish(buffer)) {
