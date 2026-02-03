@@ -1,114 +1,106 @@
 const express = require("express");
 const http = require("http");
 const WebSocket = require("ws");
-const fs = require("fs");
 const path = require("path");
-const fetch = require("node-fetch");
-const FastText = require("fasttext.js");
+const fs = require("fs");
+const https = require("https");
+const cors = require("cors");
+const { Classifier } = require("fasttext.js"); // FastText moderno
 
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-const PORT = process.env.PORT || 3000;
+app.use(cors()); // Permite chamadas externas
+app.use(express.static(path.join(__dirname, "public")));
 
-const MODEL_DIR = path.join(__dirname, "model");
-const MODEL_PATH = path.join(MODEL_DIR, "lid.176.bin");
-const MODEL_URL =
-  "https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.bin";
+const MODEL_FILE = path.join(__dirname, "lid.176.bin");
+const MODEL_URL = "https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.bin";
 
-app.use(express.json({ limit: "30mb" }));
-app.use(express.static("public"));
-
-const ft = new FastText.Classifier();
+const ft = new Classifier();
 let modelReady = false;
 
-/* --------- DOWNLOAD AUTOMÁTICO --------- */
-async function downloadModel() {
-  if (!fs.existsSync(MODEL_DIR)) fs.mkdirSync(MODEL_DIR);
-  if (fs.existsSync(MODEL_PATH)) return;
-
-  const res = await fetch(MODEL_URL);
-  const file = fs.createWriteStream(MODEL_PATH);
-
-  await new Promise(resolve => {
-    res.body.pipe(file);
-    res.body.on("end", resolve);
+// Baixa modelo automaticamente
+async function downloadModel(url, dest) {
+  if (fs.existsSync(dest)) return;
+  console.log("Baixando modelo FastText, isso pode levar alguns minutos...");
+  return new Promise((resolve, reject) => {
+    const file = fs.createWriteStream(dest);
+    https.get(url, response => {
+      if (response.statusCode !== 200) return reject(new Error("Falha ao baixar modelo: " + response.statusCode));
+      response.pipe(file);
+      file.on("finish", () => file.close(resolve));
+    }).on("error", err => {
+      fs.unlinkSync(dest);
+      reject(err);
+    });
   });
 }
 
-/* --------- LOAD --------- */
+// Carrega modelo de forma assíncrona
 (async () => {
-  await downloadModel();
-  await ft.loadModel(MODEL_PATH);
-  modelReady = true;
+  try {
+    await downloadModel(MODEL_URL, MODEL_FILE);
+    await ft.loadModel(MODEL_FILE);
+    modelReady = true;
+    console.log("FastText model loaded");
+  } catch (err) {
+    console.error("Erro ao carregar modelo FastText:", err);
+  }
 })();
 
-/* --------- SOCKET --------- */
+// Função para verificar se o texto é inglês
+function isEnglish(text) {
+  const result = ft.predict(text.replace(/\n/g, " "), 1);
+  return result[0].label === "__label__en";
+}
+
+// WebSocket
 wss.on("connection", ws => {
-  ws.on("message", async msg => {
+  ws.on("message", async message => {
     if (!modelReady) {
-      ws.send(JSON.stringify({ type: "error", message: "Modelo carregando" }));
+      ws.send(JSON.stringify({ error: "Modelo ainda não pronto, tente novamente em alguns segundos." }));
       return;
     }
 
-    const { text } = JSON.parse(msg.toString());
-    if (!text) return;
+    const text = message.toString();
+    const lines = text.split(/\n+/);
 
-    // 🔹 divide pelos marcadores Prompt
-    const blocks = text.split(/Prompt\s*\d*/gi).slice(1);
-    const totalBlocks = blocks.length;
+    let collecting = false;
+    let buffer = "";
+    let prompts = [];
 
-    ws.send(JSON.stringify({
-      type: "init",
-      total: totalBlocks
-    }));
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
 
-    let processed = 0;
-    let valid = 0;
-    const prompts = [];
-
-    for (const block of blocks) {
-      processed++;
-
-      const cleaned = block
-        .split(/Resumo:/i)[0]
-        .replace(/\s+/g, " ")
-        .trim();
-
-      if (cleaned.length > 40) {
-        try {
-          const pred = ft.predict(cleaned.slice(0, 600), 1);
-          if (pred[0]?.label === "__label__en") {
-            prompts.push(cleaned);
-            valid++;
-          }
-        } catch {
-          ws.send(JSON.stringify({
-            type: "error",
-            message: "Erro ao processar um prompt"
-          }));
-        }
+      if (/^prompt\s*\d*/i.test(line.trim())) {
+        if (buffer.trim() && isEnglish(buffer)) prompts.push(buffer.trim());
+        buffer = "";
+        collecting = true;
+      } else if (collecting) {
+        buffer += " " + line;
       }
 
-      const percent = Math.round((processed / totalBlocks) * 100);
-
       ws.send(JSON.stringify({
-        type: "progress",
-        processed,
-        valid,
-        percent
+        progress: Math.round((i / lines.length) * 100),
+        found: prompts.length
       }));
+
+      await new Promise(r => setTimeout(r, 10));
+    }
+
+    if (buffer.trim() && isEnglish(buffer)) {
+      prompts.push(buffer.trim());
     }
 
     ws.send(JSON.stringify({
-      type: "done",
-      total: valid,
-      prompts
+      done: true,
+      prompts,
+      total: prompts.length
     }));
   });
 });
 
-server.listen(PORT, () => {
-  console.log("Servidor ativo na porta " + PORT);
+server.listen(3000, () => {
+  console.log("Server running on port 3000");
 });
