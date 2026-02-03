@@ -5,7 +5,7 @@ const path = require("path");
 const fs = require("fs");
 const https = require("https");
 const cors = require("cors");
-const FastText = require("fasttext");
+const FastText = require("fasttext"); // Nativo Node.js
 
 const app = express();
 const server = http.createServer(app);
@@ -20,7 +20,7 @@ const MODEL_URL = "https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid
 let ft = null;
 let modelReady = false;
 
-// Logs detalhados no console do Render
+// Logs detalhados
 function log(message) {
   console.log(`[SERVER LOG] ${new Date().toISOString()} - ${message}`);
 }
@@ -37,12 +37,10 @@ async function downloadModel(url, dest) {
     https.get(url, response => {
       if (response.statusCode !== 200) return reject(new Error("Falha ao baixar modelo: " + response.statusCode));
       response.pipe(file);
-      file.on("finish", () => {
-        file.close(() => {
-          log("Download do modelo concluído.");
-          resolve();
-        });
-      });
+      file.on("finish", () => file.close(() => {
+        log("Download do modelo concluído.");
+        resolve();
+      }));
     }).on("error", err => {
       fs.unlinkSync(dest);
       reject(err);
@@ -50,11 +48,11 @@ async function downloadModel(url, dest) {
   });
 }
 
-// Carrega modelo nativo FastText
+// Carrega modelo corretamente de forma assíncrona
 (async () => {
   try {
     await downloadModel(MODEL_URL, MODEL_FILE);
-    ft = new FastText.Classifier({ model: MODEL_FILE });
+    ft = await FastText.loadModel(MODEL_FILE);
     modelReady = true;
     log("FastText model loaded e pronto!");
   } catch (err) {
@@ -100,14 +98,13 @@ wss.on("connection", ws => {
         buffer += " " + line;
       }
 
-      // Atualiza progresso em tempo real
       ws.send(JSON.stringify({
         progress: Math.round((i / lines.length) * 100),
         found: prompts.length,
         currentLine: line.slice(0, 50)
       }));
 
-      await new Promise(r => setTimeout(r, 5)); // mantém UI responsiva
+      await new Promise(r => setTimeout(r, 5));
     }
 
     if (buffer.trim() && await isEnglish(buffer)) {
