@@ -1,0 +1,14 @@
+{
+  "name": "prompt-detector-ws",
+  "version": "1.1.0",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "*",
+    "ws": "*",
+    "fasttext.js": "*",
+    "node-fetch": "*"
+  }
+}
